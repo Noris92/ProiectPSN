@@ -1,0 +1,29 @@
+<section class="card">
+    <div class="card-header">
+        <h2>Control LED-uri</h2>
+        <span class="card-icon">💡</span>
+    </div>
+
+    <div class="led-preview">
+        <div class="led-dot green" id="dot-green"></div>
+        <div class="led-dot yellow" id="dot-yellow"></div>
+        <div class="led-dot red" id="dot-red"></div>
+    </div>
+
+    <p>
+        Mod LED: <strong id="led-mode">{{ state.led_mode }}</strong>
+    </p>
+
+    <p>
+        LED activ: <strong id="led-state">{{ state.led_state }}</strong>
+    </p>
+
+    <div class="button-row">
+        <button class="btn btn-green" onclick="turnLedOn()">Aprinde LED</button>
+        <button class="btn btn-gray" onclick="turnLedOff()">Stinge LED</button>
+    </div>
+
+    <p class="muted">
+        Când LED-ul este aprins, culoarea se schimbă automat în funcție de temperatură.
+    </p>
+</section>
