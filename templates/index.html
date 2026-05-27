@@ -1,29 +1,272 @@
-<section class="card">
-    <div class="card-header">
-        <h2>Control LED-uri</h2>
-        <span class="card-icon">💡</span>
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <title>Sistem IoT - Arduino Cloud Control</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+    <div class="page">
+        <header class="header">
+            <div>
+                <p class="eyebrow">Arduino UNO + Flask + Azure</p>
+                <h1>Sistem de conducere IoT</h1>
+                <p class="subtitle">
+                    Monitorizare temperatură, control LED, mesaje către microcontroller și detecție inundații.
+                </p>
+            </div>
+
+            <div class="status-pill" id="connection-status">
+                {{ "Simulare" if state.simulation else "Arduino conectat" }}
+            </div>
+        </header>
+
+        <main class="grid">
+            <section class="card temperature-card">
+                <div class="card-header">
+                    <h2>Temperatură</h2>
+                    <span class="card-icon">🌡️</span>
+                </div>
+
+                <div class="temperature-value">
+                    <span id="temperature">{{ state.temperature }}</span><small>°C</small>
+                </div>
+
+                <p class="muted">
+                    Umiditate: <strong id="humidity">{{ state.humidity }}</strong>%
+                </p>
+
+                <p class="small-text">
+                    Ultima actualizare: <span id="last-update">{{ state.last_update }}</span>
+                </p>
+            </section>
+
+            <section class="card">
+                <div class="card-header">
+                    <h2>Control LED</h2>
+                    <span class="card-icon">💡</span>
+                </div>
+
+                <div class="led-status-row">
+                    <div class="led-dot" id="led-dot"></div>
+                    <span>LED: <strong id="led-state">{{ "ON" if state.led else "OFF" }}</strong></span>
+                </div>
+
+                <div class="button-row">
+                    <button class="btn btn-green" onclick="controlLED('on')">
+                        Aprinde LED
+                    </button>
+
+                    <button class="btn btn-red" onclick="controlLED('off')">
+                        Stinge LED
+                    </button>
+                </div>
+            </section>
+
+            <section class="card">
+                <div class="card-header">
+                    <h2>Mesaj către sistem</h2>
+                    <span class="card-icon">✉️</span>
+                </div>
+
+                <div class="message-form">
+                    <input
+                        type="text"
+                        id="message-input"
+                        maxlength="29"
+                        placeholder="Scrie mesajul pentru Arduino..."
+                    >
+
+                    <button class="btn btn-blue" onclick="sendMessage()">
+                        Trimite
+                    </button>
+                </div>
+
+                <h3>Ultimele 10 mesaje</h3>
+                <ul class="list" id="messages-list"></ul>
+            </section>
+
+            <section class="card flood-card" id="flood-card">
+                <div class="card-header">
+                    <h2>Detecție inundații</h2>
+                    <span class="card-icon">💧</span>
+                </div>
+
+                <div class="flood-status" id="flood-status">
+                    {{ "ALERTĂ INUNDAȚIE" if state.flood else "Normal" }}
+                </div>
+
+                <div class="button-row">
+                    <button class="btn btn-yellow" onclick="simulateFlood()">
+                        Simulează alertă
+                    </button>
+
+                    <button class="btn btn-gray" onclick="resetFlood()">
+                        Resetează alertă
+                    </button>
+                </div>
+
+                <h3>Ultimele evenimente</h3>
+                <ul class="list" id="events-list"></ul>
+            </section>
+
+            <section class="card full-width">
+                <div class="card-header">
+                    <h2>Status sistem</h2>
+                    <span class="card-icon">⚙️</span>
+                </div>
+
+                <p id="system-status">{{ state.system_status }}</p>
+            </section>
+        </main>
     </div>
 
-    <div class="led-preview">
-        <div class="led-dot green" id="dot-green"></div>
-        <div class="led-dot yellow" id="dot-yellow"></div>
-        <div class="led-dot red" id="dot-red"></div>
-    </div>
+    <script>
+        async function fetchStatus() {
+            const response = await fetch("/status");
+            const data = await response.json();
 
-    <p>
-        Mod LED: <strong id="led-mode">{{ state.led_mode }}</strong>
-    </p>
+            document.getElementById("temperature").textContent = data.temperature;
+            document.getElementById("humidity").textContent = data.humidity;
+            document.getElementById("last-update").textContent = data.last_update;
 
-    <p>
-        LED activ: <strong id="led-state">{{ state.led_state }}</strong>
-    </p>
+            document.getElementById("led-state").textContent = data.led ? "ON" : "OFF";
 
-    <div class="button-row">
-        <button class="btn btn-green" onclick="turnLedOn()">Aprinde LED</button>
-        <button class="btn btn-gray" onclick="turnLedOff()">Stinge LED</button>
-    </div>
+            const ledDot = document.getElementById("led-dot");
+            if (data.led) {
+                ledDot.classList.add("active");
+            } else {
+                ledDot.classList.remove("active");
+            }
 
-    <p class="muted">
-        Când LED-ul este aprins, culoarea se schimbă automat în funcție de temperatură.
-    </p>
-</section>
+            const floodStatus = document.getElementById("flood-status");
+            const floodCard = document.getElementById("flood-card");
+
+            if (data.flood) {
+                floodStatus.textContent = "ALERTĂ INUNDAȚIE";
+                floodCard.classList.add("danger");
+            } else {
+                floodStatus.textContent = "Normal";
+                floodCard.classList.remove("danger");
+            }
+
+            document.getElementById("system-status").textContent = data.system_status;
+
+            document.getElementById("connection-status").textContent =
+                data.simulation ? "Simulare" : "Arduino conectat";
+
+            renderMessages(data.messages);
+            renderEvents(data.flood_events);
+        }
+
+        async function controlLED(action) {
+            await fetch("/led", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ action: action })
+            });
+
+            fetchStatus();
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById("message-input");
+            const message = input.value.trim();
+
+            if (!message) {
+                alert("Scrie un mesaj înainte să trimiți.");
+                return;
+            }
+
+            const response = await fetch("/message", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ message: message })
+            });
+
+            if (response.ok) {
+                input.value = "";
+                fetchStatus();
+            } else {
+                alert("Mesajul nu a putut fi trimis.");
+            }
+        }
+
+        async function simulateFlood() {
+            await fetch("/simulate-flood", {
+                method: "POST"
+            });
+
+            fetchStatus();
+        }
+
+        async function resetFlood() {
+            await fetch("/reset-flood", {
+                method: "POST"
+            });
+
+            fetchStatus();
+        }
+
+        async function deleteEvent(index) {
+            await fetch(`/delete-event/${index}`, {
+                method: "DELETE"
+            });
+
+            fetchStatus();
+        }
+
+        function renderMessages(messages) {
+            const list = document.getElementById("messages-list");
+            list.innerHTML = "";
+
+            if (!messages || messages.length === 0) {
+                list.innerHTML = `<li class="empty">Nu există mesaje salvate.</li>`;
+                return;
+            }
+
+            messages.forEach((message) => {
+                const li = document.createElement("li");
+                li.textContent = message;
+                list.appendChild(li);
+            });
+        }
+
+        function renderEvents(events) {
+            const list = document.getElementById("events-list");
+            list.innerHTML = "";
+
+            if (!events || events.length === 0) {
+                list.innerHTML = `<li class="empty">Nu există evenimente.</li>`;
+                return;
+            }
+
+            events.forEach((event, index) => {
+                const li = document.createElement("li");
+                li.className = "event-item";
+
+                li.innerHTML = `
+                    <div>
+                        <strong>${event.text}</strong>
+                        <span>${event.time}</span>
+                    </div>
+
+                    <button onclick="deleteEvent(${index})">Șterge</button>
+                `;
+
+                list.appendChild(li);
+            });
+        }
+
+        fetchStatus();
+        setInterval(fetchStatus, 3000);
+    </script>
+</body>
+</html>
